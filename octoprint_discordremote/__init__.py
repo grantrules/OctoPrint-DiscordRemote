@@ -48,7 +48,6 @@ class DiscordRemotePlugin(octoprint.plugin.EventHandlerPlugin,
 
     def __init__(self):
         self.discord = None
-        self.command = None
         self.last_progress_message = None
         self.last_progress_percent = 0
         self.is_muted = False
@@ -155,16 +154,16 @@ class DiscordRemotePlugin(octoprint.plugin.EventHandlerPlugin,
 
     def configure_discord(self, send_test=False):
         # Configure discord
-        if self.command is None:
-            self.command = Command(self)
-
+        def create_commands(client):
+            return Command(self, client)
         if self.discord:
             self.discord.shutdown_discord()
 
         self.discord = DiscordImpl(self._settings.get(['bottoken'], merged=True),
                                    self._settings.get(['channelid'], merged=True),
                                    self._logger,
-                                   self.command,
+                                   self._settings.get(['prefix'], merged=True),
+                                   create_commands,
                                    self.update_discord_status)
         if self.presence is None:
             self.presence = Presence()
@@ -349,13 +348,8 @@ class DiscordRemotePlugin(octoprint.plugin.EventHandlerPlugin,
             return self.unpack_message(data)
 
     def execute_command(self, data):
-        args = ""
-        if 'args' in data:
-            args = data['args']
-
-        messages = self.command.parse_command(args)
-        if not self.discord.send(messages=messages):
-            return make_response("Failed to send message", 404)
+        # removed feature
+        pass
 
     def unpack_message(self, data):
         builder = embedbuilder.EmbedBuilder()

@@ -14,8 +14,9 @@ from unittest.mock import Mock
 import discord
 from discord.embeds import Embed
 from discord.file import File
+from discord.ext import commands
 
-from octoprint_discordremote import Command
+from octoprint_discordremote.command import Command
 
 
 class DiscordImpl:
@@ -57,7 +58,8 @@ class DiscordImpl:
                  bot_token: str,
                  channel_id: str,
                  logger,
-                 command: Command,
+                 command_prefix: str,
+                 create_commands,
                  status_callback: Callable[[str], None]):
         self.loop = None
         self.client: Optional[discord.Client] = None
@@ -71,7 +73,8 @@ class DiscordImpl:
         self.bot_token = bot_token
         self.channel_id = int(channel_id)
         self.logger = logger
-        self.command = command
+        self.command_prefix = command_prefix
+        self.create_commands = create_commands
         self.status_callback = status_callback
         self.status_callback(connected="connecting")
 
@@ -86,7 +89,9 @@ class DiscordImpl:
 
         loop.add_signal_handler = Mock()
 
-        self.client = discord.Client()
+        self.client = commands.Bot(command_prefix=self.command_prefix)
+
+        self.command = self.create_commands(self.client)
 
         @self.client.event
         async def on_message(message):
@@ -172,10 +177,6 @@ class DiscordImpl:
             if re.match(r"^[\w,\s-]+\.(?:g|gco|gcode|zip(?:\.[\d]*)?)$", filename):
                 messages = self.command.download_file(filename, url, user)
                 self.send(messages)
-
-        if len(message.content) > 0:
-            messages = self.command.parse_command(message.content, user)
-            self.send(messages)
 
     def shutdown_discord(self):
         self.status_callback(connected="disconnected")

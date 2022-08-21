@@ -24,62 +24,81 @@ from octoprint_discordremote.embedbuilder import EmbedBuilder, success_embed, er
 
 
 class Command:
-    def __init__(self, plugin: 'DiscordRemotePlugin'):
+    def __init__(self, plugin: 'DiscordRemotePlugin', client):
         assert plugin
         self.plugin: 'DiscordRemotePlugin' = plugin
-        self.command_dict = collections.OrderedDict()
-        self.command_dict['connect'] = {'cmd': self.connect, 'params': "[port] [baudrate]",
-                                        'description': "Connect to a printer."}
-        self.command_dict['disconnect'] = {'cmd': self.disconnect, 'description': "Disconnect from a printer."}
-        self.command_dict['print'] = {'cmd': self.start_print, 'params': "{filename}", 'description': "Print a file."}
-        self.command_dict['files'] = {'cmd': self.list_files,
-                                      'description': "List all files and respective download links."}
-        self.command_dict['unzip'] = {'cmd': self.unzip, 'params': "{filename}",
-                                      'description': "Unzip .zip files and .zip.001, .zip.002,... files"}
-        self.command_dict['abort'] = {'cmd': self.cancel_print, 'description': "Abort a print."}
-        self.command_dict['snapshot'] = {'cmd': self.snapshot, 'description': "Take a snapshot with the camera."}
-        self.command_dict['status'] = {'cmd': self.status, 'description': "Get the current printer status."}
-        self.command_dict['help'] = {'cmd': self.help, 'description': "Print this help."}
-        self.command_dict['pause'] = {'cmd': self.pause, 'description': "Pause current print."}
-        self.command_dict['resume'] = {'cmd': self.resume, 'description': "Resume current print."}
-        self.command_dict['timelapse'] = {'cmd': self.timelapse,
-                                          'description': "List all timelapses and respective download links."}
-        self.command_dict['mute'] = {'cmd': self.mute,
-                                     'description': "Mute notifications."}
-        self.command_dict['unmute'] = {'cmd': self.unmute,
-                                       'description': "Unmute notifications."}
-        self.command_dict['gcode'] = {'cmd': self.gcode, 'params': '{GCODE}',
-                                      'description': "Send a set of GCODE commands directly to the printer. GCODE lines seperated by \';\'"}
-        self.command_dict['getfile'] = {'cmd': self.getfile, 'params': "{filename}",
-                                        'description': "Get a gcode file and upload to discord."}
-        self.command_dict['gettimelapse'] = {'cmd': self.gettimelapse, 'params': "{filename}",
-                                             'description': "Get a timelapse file and upload to discord."}
+
+        self.client = client
 
         # Load plugins
         for command_plugin in plugin_list:
-            command_plugin.setup(self, plugin)
+            command_plugin.setup(self, plugin, client)
 
-    def parse_command(self, string, user=None) -> List[Tuple[Embed, File]]:
-        prefix_str = self.plugin.get_settings().get(["prefix"])
-        prefix_len = len(prefix_str)
+        @client.command(description='Connect to a printer.',
+            usage='/connect [printer] [baud_rate]')
+        async def connect(ctx, *args):
+            ctx.send(self.connect(args)) 
 
-        parts = re.split(r'\s+', string)
+        @client.command(description='Disconnect from a printer.')
+        async def disconnect(ctx):
+            ctx.send(self.disconnect()) 
 
-        if len(parts[0]) < prefix_len or prefix_str != parts[0][:prefix_len]:
-            return []
+        @client.command(description='Print a file.',
+                usage='/print [file]')
+        async def print(ctx, file_name):
+            ctx.send(self.start_print(file_name))
 
-        command_string = parts[0][prefix_len:]
+        @client.command(description='List all files and respective download links.')
+        async def files(ctx):
+            ctx.send(self.list_files())
 
-        command = self.command_dict.get(command_string, {'cmd': self.help})
+        @client.command(description='Unzip .zip files and .zip.001, .zip.002,... files')
+        async def unzip(ctx, file_name):
+            ctx.send(self.unzip(file_name))
 
-        if user and not self.check_perms(command_string, user):
-            return error_embed(author=self.plugin.get_printer_name(),
-                               title="Permission Denied")
+        @client.command(description='Abort a print')
+        async def abort(ctx):
+            ctx.send(self.cancel_print())
 
-        if command.get('params'):
-            return command['cmd'](parts)
-        else:
-            return command['cmd']()
+        @client.command(description='Get the current printer status.')
+        async def status(ctx):
+            ctx.send(self.status()) 
+
+        @client.command(description='Pause current print.')
+        async def pause(ctx):
+            ctx.send(self.pause()) 
+
+        @client.command(description='Mute notifications.')
+        async def mute(ctx):
+            ctx.send(self.mute()) 
+
+        @client.command(description='Unmute notifications.')
+        async def unmute(ctx):
+            ctx.send(self.unmute()) 
+
+        @client.command(description='Resume current print.')
+        async def resume(ctx):
+            ctx.send(self.resume()) 
+
+        @client.command(description='List all timelapses and respective download links.')
+        async def timelapse(ctx):
+            ctx.send(self.timelapse())
+
+        @client.command(description='Send a set of GCODE commands directly to the printer. GCODE lines seperated by \';\'')
+        async def gcode(ctx, *args):
+            ctx.send(self.gcode(args))
+
+        @client.command(description='Get a gcode file and upload to discord.')
+        async def getfile(ctx, *args):
+            ctx.send(self.getfile(args))
+
+        @client.command(description='Get a timelapse file and upload to discord.')
+        async def gettimelapse(ctx, *args):
+            ctx.send(self.gettimelapse(args))
+
+        @client.command(description='Take a snapshot with the camera.')
+        async def snapshot(ctx):
+            ctx.send(self.snapshot())
 
     def timelapse(self):
         path = os.path.join(os.getcwd(), self.plugin._data_folder, '..', '..', 'timelapse')
@@ -131,17 +150,12 @@ class Command:
         return error_embed(author=self.plugin.get_printer_name(),
                            title='Print aborted')
 
-    def start_print(self, params):
-        if len(params) != 2:
-            return error_embed(author=self.plugin.get_printer_name(),
-                               title='Wrong number of arguments',
-                               description='try "%sprint [filename]"' % self.plugin.get_settings().get(
-                                   ["prefix"]))
+    def start_print(self, file_name):
         if not self.plugin.get_printer().is_ready():
             return error_embed(author=self.plugin.get_printer_name(),
                                title='Printer is not ready')
 
-        file = self.find_file(params[1])
+        file = self.find_file(file_name)
         if file is None:
             return error_embed(author=self.plugin.get_printer_name(),
                                title='Failed to find the file')
@@ -250,7 +264,7 @@ class Command:
                 file_array.append(details)
 
     def connect(self, params):
-        if len(params) > 3:
+        if len(params) > 2:
             return error_embed(author=self.plugin.get_printer_name(),
                                title='Too many parameters',
                                description='Should be: %sconnect [port] [baudrate]' % self.plugin.get_settings().get(
@@ -262,11 +276,11 @@ class Command:
 
         port = None
         baudrate = None
-        if len(params) >= 2:
-            port = params[1]
-        if len(params) == 3:
+        if len(params) >= 1:
+            port = params[0]
+        if len(params) == 2:
             try:
-                baudrate = int(params[2])
+                baudrate = int(params[1])
             except ValueError:
                 return error_embed(author=self.plugin.get_printer_name(),
                                    title='Wrong format for baudrate',
@@ -399,14 +413,7 @@ class Command:
                              title='File Received',
                              description=filename)
 
-    def unzip(self, params):
-        if len(params) != 2:
-            return error_embed(author=self.plugin.get_printer_name(),
-                               title='Wrong number of arguments',
-                               description='try "%sunzip [filename]"' % self.plugin.get_settings().get(
-                                   ["prefix"]))
-
-        file_name = params[1]
+    def unzip(self, file_name):
 
         flat_filelist = self.get_flat_file_list()
 
@@ -525,7 +532,7 @@ class Command:
 
         allowed_gcodes = self.plugin.get_settings().get(["allowed_gcode"])
         allowed_gcodes = re.split('[^0-9a-zA-Z]+', allowed_gcodes.upper())
-        script = "".join(params[1:]).upper()
+        script = "".join(params).upper()
         lines = script.split(';')
         for line in lines:
             first = line.strip().replace(' ', '').replace('\t', '')
@@ -547,7 +554,7 @@ class Command:
                              title="Sent script")
 
     def getfile(self, params):
-        filename = " ".join(params[1:])
+        filename = " ".join(params)
         foundfile = self.find_file(filename)
         if foundfile is None:
             return error_embed(author=self.plugin.get_printer_name(),
@@ -557,7 +564,7 @@ class Command:
         return upload_file(file_path)
 
     def gettimelapse(self, params):
-        filename = " ".join(params[1:]).upper()
+        filename = " ".join(params).upper()
         path = os.path.join(os.getcwd(), self.plugin._data_folder, '..', '..', 'timelapse')
         path = os.path.abspath(path)
 
